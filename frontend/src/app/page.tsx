@@ -1,54 +1,66 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
 
+// Strict TypeScript Interfaces for Vercel Build
+interface User {
+  id: number;
+  phone_number: string;
+  display_name: string;
+  avatar_url: string | null;
+}
+
+interface Conversation {
+  id: number;
+  is_group: boolean;
+  name: string | null;
+  created_at: string;
+}
+
+interface Message {
+  id: number;
+  conversation_id: number;
+  sender_id: number;
+  content: string;
+  status: string;
+  created_at: string;
+}
+
 export default function SignalClone() {
-  const [user, setUser] = useState<any>(null);
-  const [phone, setPhone] = useState('555-0001'); // Default from seed.py
-  const [conversations, setConversations] = useState<any[]>([]);
-  const [activeConv, setActiveConv] = useState<any>(null);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [user, setUser] = useState<User | null>(null);
+  const [phone, setPhone] = useState('555-0001'); 
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConv, setActiveConv] = useState<Conversation | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   
   const ws = useRef<WebSocket | null>(null);
-  const activeConvRef = useRef<any>(null);
 
-  const API_URL = "http://localhost:8000";
-  const WS_URL = "ws://localhost:8000/ws";
-
-  // Keep ref synchronized with state so WebSocket closure always has access to the current active conversation
-  useEffect(() => {
-    activeConvRef.current = activeConv;
-  }, [activeConv]);
+  // Use Vercel Environment Variables, fallback to localhost
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws";
 
   useEffect(() => {
     if (user) {
-      // Fetch user's conversations
       fetch(`${API_URL}/api/conversations`)
         .then(r => r.json())
         .then(setConversations);
       
-      // Initialize WebSocket for real-time messaging
       ws.current = new WebSocket(WS_URL);
       ws.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.type === 'new_message') {
-          const msg = data.payload;
-          
-          // CRITICAL FIX: Only append the message to the UI if it belongs to the chat pane currently open!
-          if (activeConvRef.current && msg.conversation_id === activeConvRef.current.id) {
-            setMessages(prev => {
-              if (prev.find(m => m.id === msg.id)) return prev;
-              return [...prev, msg];
-            });
-          }
+          setMessages(prev => {
+            if (prev.find(m => m.id === data.payload.id)) return prev;
+            return [...prev, data.payload];
+          });
         }
       };
       
       return () => ws.current?.close();
     }
-  }, [user]);
+  }, [user, API_URL, WS_URL]);
 
-  const loadMessages = async (conv: any) => {
+  const loadMessages = async (conv: Conversation) => {
     setActiveConv(conv);
     const res = await fetch(`${API_URL}/api/conversations/${conv.id}/messages`);
     const data = await res.json();
@@ -62,21 +74,23 @@ export default function SignalClone() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone_number: phone })
     });
-    setUser(await res.json());
+    const userData: User = await res.json();
+    setUser(userData);
   };
 
   const sendMessage = async () => {
-    if (!inputText.trim() || !activeConv) return;
+    if (!inputText.trim() || !activeConv || !user) return;
     
-    // Construct local message object
-    const msg = {
+    const msg: Message = {
+      id: Date.now(),
       conversation_id: activeConv.id,
       sender_id: user.id,
-      content: inputText
+      content: inputText,
+      status: 'SENT',
+      created_at: new Date().toISOString()
     };
     
-    // We send to backend, letting FastAPI save it to SQLite and bounce it back 
-    // with a real DB ID and Timestamp. (Removed optimistic update to prevent duplicates)
+    setMessages(prev => [...prev, msg]);
     ws.current?.send(JSON.stringify({ type: 'new_message', payload: msg }));
     setInputText('');
   };
@@ -105,9 +119,7 @@ export default function SignalClone() {
 
   return (
     <div className="flex h-screen bg-white dark:bg-[#121212] text-black dark:text-gray-100 font-sans">
-      
       <div className="w-1/3 max-w-md border-r border-gray-200 dark:border-gray-800 flex flex-col bg-gray-50 dark:bg-[#1a1a1a]">
-        
         <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm">
