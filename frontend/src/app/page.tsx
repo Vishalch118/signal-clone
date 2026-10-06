@@ -81,8 +81,8 @@ export default function SignalClone() {
       if (!userData || !userData.display_name) throw new Error("Invalid user data");
       
       setUser(userData);
-    } catch (err: any) {
-      alert("Failed to connect to backend: " + err.message);
+    } catch (err) {
+      alert("Failed to connect to backend: " + (err instanceof Error ? err.message : String(err)));
       console.error(err);
     }
   };
