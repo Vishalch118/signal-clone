@@ -35,9 +35,9 @@ export default function SignalClone() {
   
   const ws = useRef<WebSocket | null>(null);
 
-  // Use Vercel Environment Variables, fallback to localhost
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-  const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws";
+  // Use Vercel Environment Variables, fallback to localhost (strip trailing slashes)
+  const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+  const WS_URL = (process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws").replace(/\/$/, "");
 
   useEffect(() => {
     if (user) {
@@ -69,13 +69,22 @@ export default function SignalClone() {
 
   const login = async () => {
     if (!phone.trim()) return;
-    const res = await fetch(`${API_URL}/api/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone_number: phone })
-    });
-    const userData: User = await res.json();
-    setUser(userData);
+    try {
+      const res = await fetch(`${API_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number: phone })
+      });
+      if (!res.ok) throw new Error(`Backend returned ${res.status}`);
+      
+      const userData: User = await res.json();
+      if (!userData || !userData.display_name) throw new Error("Invalid user data");
+      
+      setUser(userData);
+    } catch (err: any) {
+      alert("Failed to connect to backend: " + err.message);
+      console.error(err);
+    }
   };
 
   const sendMessage = async () => {
